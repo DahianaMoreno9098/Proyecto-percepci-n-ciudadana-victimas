@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+env/
+venv/
+
+# Datos y modelos pesados / temporales
+mlruns/
+*.log
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
