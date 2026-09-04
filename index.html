@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Percepción ciudadana · Oficina de Enlace de Víctimas de Quibdó</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- React, ReactDOM, Recharts, Babel desde CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', system-ui, sans-serif; }
+    #loading { padding: 60px; text-align: center; color: #5E6B60; font-family: 'Inter', sans-serif; }
+    select:focus, button:focus { outline: 2px solid #0F6B3F; outline-offset: 1px; }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="loading">Cargando el tablero…</div></div>
+
+  <script type="text/babel" data-presets="react">
+const { useState, useMemo } = React;
+const {
+  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} = Recharts;
+
+/* ============================================================
+   Sistema de análisis de percepción ciudadana
+   Oficina de Enlace de Víctimas — Alcaldía de Quibdó
+   Datos SINTÉTICOS con fines de demostración académica.
+   Paleta basada en la bandera del municipio de Quibdó.
+   ============================================================ */
+
+// --- Iconos SVG mínimos (reemplazan lucide-react) ---
+const PATHS = {
+  Filter: "M22 3H2l8 9.46V19l4 2v-8.54L22 3z",
+  TrendingDown: "M23 18l-9.5-9.5-5 5L1 6 M17 18h6v-6",
+  Clock: "M12 22a10 10 0 100-20 10 10 0 000 20z M12 6v6l4 2",
+  MessageSquare: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
+  Target: "M12 22a10 10 0 100-20 10 10 0 000 20z M12 18a6 6 0 100-12 6 6 0 000 12z M12 14a2 2 0 100-4 2 2 0 000 4z",
+  AlertTriangle: "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z M12 9v4 M12 17h.01",
+  CheckCircle2: "M22 11.08V12a10 10 0 11-5.93-9.14 M22 4L12 14.01l-3-3",
+  Activity: "M22 12h-4l-3 9L9 3l-3 9H2",
+  MapPin: "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z M12 13a3 3 0 100-6 3 3 0 000 6z",
+  RefreshCw: "M23 4v6h-6 M1 20v-6h6 M20.49 9A9 9 0 005.64 5.64L1 10 M3.51 15a9 9 0 0014.85 3.36L23 14",
+  Download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3",
+};
+function Icon({ name, size = 16, color = "currentColor", style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={style} aria-hidden="true">
+      {PATHS[name].split(" M").map((seg, i) => (
+        <path key={i} d={(i === 0 ? seg : "M" + seg)} />
+      ))}
+    </svg>
+  );
+}
+
+// --- Paleta derivada de la bandera de Quibdó (verde / amarillo / azul) ---
+const C = {
+  ink: "#14332a", petrol: "#0F6B3F", steel: "#1E5AA8", clay: "#C0392B",
+  gold: "#E9B417", moss: "#2E8B57", paper: "#F3F5F0", card: "#FFFFFF",
+  line: "#DCE3DA", muted: "#5E6B60",
+};
+const SENT = { Positivo: C.moss, Neutral: "#B9AE98", Negativo: C.clay };
+
+const ZONAS = [
+  "Comuna 1 (Centro)", "Comuna 2 (Roma)", "Comuna 3 (Yesca Grande)",
+  "Comuna 4 (Niño Jesús)", "Comuna 5 (Cristo Rey)", "Comuna 6 (Huapango)",
+  "Corregimiento Pacurita", "Corregimiento Tutunendo", "Corregimiento Guayabal",
+];
+const CATEGORIAS = [
+  "Ayuda humanitaria", "Indemnización / reparación", "Vivienda",
+  "Salud y atención psicosocial", "Educación", "Registro / inclusión RUV",
+  "Retornos y reubicación", "Otros trámites",
+];
+const PERIODOS = ["2025-T3", "2025-T4", "2026-T1", "2026-T2"];
+
+function seeded(seed) { let s = seed; return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; }; }
+const rnd = seeded(42);
+const catPeso = [0.22, 0.18, 0.14, 0.12, 0.08, 0.13, 0.07, 0.06];
+const catNeg = [0.42, 0.66, 0.58, 0.40, 0.30, 0.52, 0.48, 0.36];
+
+const TEXTOS = {
+  "Ayuda humanitaria": {
+    Negativo: ["Llevo tres meses esperando la ayuda humanitaria y no me han dado respuesta.", "Solicité el mercado de emergencia y nunca llegó, mi familia está pasando necesidad."],
+    Neutral: ["Pregunto por el estado de mi solicitud de ayuda humanitaria inmediata.", "Quisiera saber qué documentos faltan para la ayuda humanitaria."],
+    Positivo: ["Agradezco que me entregaron la ayuda humanitaria rápidamente.", "La atención para la ayuda de emergencia fue oportuna, gracias."],
+  },
+  "Indemnización / reparación": {
+    Negativo: ["Fui incluido hace años y todavía no me llega la indemnización, es una injusticia.", "No entiendo por qué a otros ya les pagaron la reparación y a mí no."],
+    Neutral: ["Solicito información sobre el turno de mi indemnización administrativa.", "¿Cómo consulto el estado de mi proceso de reparación?"],
+    Positivo: ["Por fin recibí la indemnización, agradezco la gestión de la oficina.", "Me orientaron bien sobre el proceso de reparación."],
+  },
+  "Vivienda": {
+    Negativo: ["Postulé al subsidio de vivienda y me rechazaron sin explicación clara.", "La casa que me asignaron tiene problemas y nadie responde."],
+    Neutral: ["Pregunto por las convocatorias de vivienda para población víctima.", "Solicito información sobre el subsidio de mejoramiento de vivienda."],
+    Positivo: ["Me asignaron la vivienda, muy agradecido con el acompañamiento.", "El proceso de postulación a vivienda fue claro."],
+  },
+  "Salud y atención psicosocial": {
+    Negativo: ["Necesito atención psicosocial y me dan citas para dentro de meses.", "No hay profesionales suficientes para la atención en salud mental."],
+    Neutral: ["Solicito una cita de atención psicosocial para mi familia.", "Pregunto por el programa de atención en salud para víctimas."],
+    Positivo: ["La atención psicosocial me ha ayudado mucho, gracias al equipo.", "Recibí buena orientación en salud, quedé satisfecho."],
+  },
+  "Educación": {
+    Negativo: ["Mi hijo no ha podido acceder al beneficio educativo prometido.", "Falta información sobre los cupos educativos para víctimas."],
+    Neutral: ["Solicito información sobre becas para estudiantes víctimas.", "Pregunto por el apoyo educativo para el próximo semestre."],
+    Positivo: ["Mi hija obtuvo el apoyo educativo, muy agradecida.", "La orientación sobre educación superior fue útil."],
+  },
+  "Registro / inclusión RUV": {
+    Negativo: ["Llevo meses esperando que me incluyan en el RUV y no hay respuesta.", "Me negaron la inclusión y no me explicaron los motivos."],
+    Neutral: ["Solicito información sobre mi estado en el Registro Único de Víctimas.", "¿Qué debo hacer para actualizar mis datos en el RUV?"],
+    Positivo: ["Ya quedé incluido en el registro, agradezco la ayuda.", "Me orientaron bien para la declaración, todo salió bien."],
+  },
+  "Retornos y reubicación": {
+    Negativo: ["Solicité apoyo para el retorno y no hay condiciones de seguridad.", "El proceso de reubicación está detenido hace tiempo."],
+    Neutral: ["Pregunto por el plan de retorno para mi comunidad.", "Solicito información sobre acompañamiento para reubicación."],
+    Positivo: ["El acompañamiento para el retorno fue bueno, gracias.", "Nos apoyaron en la reubicación de manera adecuada."],
+  },
+  "Otros trámites": {
+    Negativo: ["Me han remitido de una oficina a otra sin resolver mi caso.", "La fila de atención es muy larga y no alcanzan a atender."],
+    Neutral: ["Solicito un certificado de mi condición de víctima.", "Pregunto por el horario de atención de la oficina."],
+    Positivo: ["La atención en ventanilla fue amable y rápida.", "Me resolvieron el trámite sin complicaciones."],
+  },
+};
+
+function generar() {
+  const filas = [];
+  let id = 1;
+  PERIODOS.forEach((per, pi) => {
+    const base = 340 + pi * 45;
+    ZONAS.forEach((z, zi) => {
+      CATEGORIAS.forEach((cat, ci) => {
+        const n = Math.round(base * catPeso[ci] * (0.6 + rnd() * 0.9) / 3);
+        for (let k = 0; k < n; k++) {
+          const mejora = pi * 0.045;
+          const pNeg = Math.max(0.12, catNeg[ci] - mejora + (rnd() - 0.5) * 0.12);
+          const r = rnd();
+          let sent = "Neutral";
+          if (r < pNeg) sent = "Negativo";
+          else if (r < pNeg + 0.34) sent = "Neutral";
+          else sent = "Positivo";
+          const rural = zi >= 6 ? 6 : 0;
+          const dias = Math.max(2, Math.round(18 - pi * 2.2 + rural + (rnd() - 0.4) * 8));
+          const opciones = TEXTOS[cat][sent];
+          const texto = opciones[Math.floor(rnd() * opciones.length)];
+          const folio = `PQR-${per.replace("-", "")}-${String(id).padStart(4, "0")}`;
+          filas.push({ id: id++, folio, periodo: per, zona: z, categoria: cat, sentimiento: sent, dias, texto });
+        }
+      });
+    });
+  });
+  return filas;
+}
+const DATA = generar();
+
+const F1_POR_CAT = CATEGORIAS.map((c, i) => ({
+  categoria: c, f1: +(0.71 + (1 - catNeg[i]) * 0.18 + rnd() * 0.05).toFixed(2),
+}));
+const F1_MACRO = +(F1_POR_CAT.reduce((a, b) => a + b.f1, 0) / F1_POR_CAT.length).toFixed(3);
+
+function StatCard({ icon, label, value, sub, accent }) {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 6, borderTop: `3px solid ${accent}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.muted, fontSize: 12.5, fontWeight: 600 }}>
+        <Icon name={icon} size={16} color={accent} /> {label}
+      </div>
+      <div style={{ fontSize: 27, fontWeight: 700, color: C.ink, lineHeight: 1.1, letterSpacing: -0.5 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: C.muted }}>{sub}</div>}
+    </div>
+  );
+}
+function Panel({ title, subtitle, children, right }) {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+        <h3 style={{ margin: 0, fontSize: 15.5, color: C.ink, fontWeight: 700 }}>{title}</h3>
+        {right}
+      </div>
+      {subtitle && <p style={{ margin: "0 0 14px", fontSize: 12.5, color: C.muted }}>{subtitle}</p>}
+      {children}
+    </div>
+  );
+}
+function thTd(isHeader) {
+  return { textAlign: "left", padding: isHeader ? "9px 10px" : "8px 10px", borderBottom: "1px solid #E3E9E1", fontWeight: isHeader ? 700 : 400, verticalAlign: "top" };
+}
+function ConnItem({ paso, txt }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: C.petrol, marginBottom: 4 }}>{paso}</div>
+      <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>{txt}</div>
+    </div>
+  );
+}
+
+function Dashboard() {
+  const [zona, setZona] = useState("Todas");
+  const [periodo, setPeriodo] = useState("Todos");
+  const [catSel, setCatSel] = useState(null);
+  const [verFilas, setVerFilas] = useState(12);
+
+  const filtrada = useMemo(() => DATA.filter(d =>
+    (zona === "Todas" || d.zona === zona) &&
+    (periodo === "Todos" || d.periodo === periodo) &&
+    (!catSel || d.categoria === catSel)
+  ), [zona, periodo, catSel]);
+  const total = filtrada.length;
+
+  const porCat = useMemo(() => {
+    const m = Object.fromEntries(CATEGORIAS.map(c => [c, 0]));
+    filtrada.forEach(d => (m[d.categoria] += 1));
+    return CATEGORIAS.map(c => ({ categoria: c, n: m[c] })).sort((a, b) => b.n - a.n);
+  }, [filtrada]);
+
+  const porSent = useMemo(() => {
+    const m = { Positivo: 0, Neutral: 0, Negativo: 0 };
+    filtrada.forEach(d => (m[d.sentimiento] += 1));
+    return ["Negativo", "Neutral", "Positivo"].map(s => ({ name: s, value: m[s] }));
+  }, [filtrada]);
+
+  const pctNeg = total ? Math.round((porSent.find(s => s.name === "Negativo").value / total) * 100) : 0;
+  const diasProm = total ? (filtrada.reduce((a, b) => a + b.dias, 0) / total).toFixed(1) : "0";
+
+  const evol = useMemo(() => PERIODOS.map(per => {
+    const sub = DATA.filter(d => d.periodo === per && (zona === "Todas" || d.zona === zona) && (!catSel || d.categoria === catSel));
+    const neg = sub.filter(d => d.sentimiento === "Negativo").length;
+    const dias = sub.length ? sub.reduce((a, b) => a + b.dias, 0) / sub.length : 0;
+    return { periodo: per, pctNeg: sub.length ? Math.round((neg / sub.length) * 100) : 0, dias: +dias.toFixed(1) };
+  }), [zona, catSel]);
+
+  const porZona = useMemo(() => ZONAS.map(z => {
+    const sub = DATA.filter(d => d.zona === z && (periodo === "Todos" || d.periodo === periodo) && (!catSel || d.categoria === catSel));
+    const neg = sub.filter(d => d.sentimiento === "Negativo").length;
+    return { zona: z.replace("Corregimiento ", "C. ").replace(/\(.*\)/, "").trim(), pctNeg: sub.length ? Math.round((neg / sub.length) * 100) : 0, n: sub.length };
+  }).sort((a, b) => b.pctNeg - a.pctNeg), [periodo, catSel]);
+
+  const resetFiltros = () => { setZona("Todas"); setPeriodo("Todos"); setCatSel(null); setVerFilas(12); };
+
+  const exportarCSV = () => {
+    const cols = ["folio", "periodo", "zona", "categoria", "sentimiento", "dias", "texto"];
+    const enc = ["Folio", "Periodo", "Zona", "Categoria", "Sentimiento", "Dias_respuesta", "Texto_PQRSD"];
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const lineas = [enc.join(",")].concat(filtrada.map(r => cols.map(c => esc(r[c])).join(",")));
+    const blob = new Blob(["\uFEFF" + lineas.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pqrsd_percepcion_${zona === "Todas" ? "todas" : "zona"}_${periodo === "Todos" ? "todos" : periodo}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const selInput = { padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.line}`, background: C.card, color: C.ink, fontSize: 13, fontFamily: "inherit", cursor: "pointer" };
+
+  return (
+    <div style={{ background: C.paper, minHeight: "100vh", color: C.ink, padding: "0 0 40px" }}>
+      <header style={{ background: C.petrol, color: "#fff", padding: "22px 28px 20px" }}>
+        <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.9, fontSize: 12.5 }}>
+              <Icon name="MapPin" size={14} color="#fff" /> Alcaldía Municipal de Quibdó · Oficina de Enlace de Víctimas
+            </div>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, background: C.gold, color: "#3a2e00", borderRadius: 6, padding: "4px 10px" }}>
+              <Icon name="AlertTriangle" size={13} color="#3a2e00" /> DATOS SIMULADOS · DEMOSTRACIÓN ACADÉMICA
+            </span>
+          </div>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: -0.4 }}>Percepción ciudadana de la población víctima</h1>
+          <p style={{ margin: "6px 0 0", fontSize: 13.5, opacity: 0.9, maxWidth: 720, lineHeight: 1.5 }}>
+            Tablero de apoyo a la decisión. Clasifica automáticamente las PQRSD por tema y analiza el sentimiento ciudadano para priorizar la atención.
+          </p>
+        </div>
+      </header>
+
+      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 28px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 16px", margin: "-14px 0 20px", position: "relative", boxShadow: "0 4px 14px rgba(15,107,63,0.10)" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 700, color: C.muted }}>
+            <Icon name="Filter" size={15} color={C.muted} /> Filtros
+          </span>
+          <select style={selInput} value={zona} onChange={e => setZona(e.target.value)}>
+            <option value="Todas">Todas las zonas</option>
+            {ZONAS.map(z => <option key={z} value={z}>{z}</option>)}
+          </select>
+          <select style={selInput} value={periodo} onChange={e => setPeriodo(e.target.value)}>
+            <option value="Todos">Todos los períodos</option>
+            {PERIODOS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          {catSel && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, background: "#EAF1EC", color: C.petrol, borderRadius: 20, padding: "5px 12px", fontWeight: 600 }}>
+              Tema: {catSel}
+              <button onClick={() => setCatSel(null)} style={{ border: "none", background: "none", cursor: "pointer", color: C.petrol, fontWeight: 700, fontSize: 14, lineHeight: 1 }}>×</button>
+            </span>
+          )}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <button onClick={exportarCSV} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", background: C.petrol, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+              <Icon name="Download" size={13} color="#fff" /> Descargar CSV
+            </button>
+            <button onClick={resetFiltros} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${C.line}`, background: C.card, color: C.muted, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+              <Icon name="RefreshCw" size={13} color={C.muted} /> Limpiar
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 20 }}>
+          <StatCard icon="MessageSquare" label="PQRSD analizadas" value={total.toLocaleString("es-CO")} sub="En la selección actual" accent={C.petrol} />
+          <StatCard icon="TrendingDown" label="Sentimiento negativo" value={`${pctNeg}%`} sub="Insatisfacción ciudadana" accent={C.clay} />
+          <StatCard icon="Clock" label="Tiempo de respuesta" value={`${diasProm} días`} sub="Promedio de atención" accent={C.gold} />
+          <StatCard icon="Target" label="F1 macro del clasificador" value={F1_MACRO.toFixed(2)} sub={`Meta ≥ 0,75 ${F1_MACRO >= 0.75 ? "· cumple" : "· por debajo"}`} accent={C.moss} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, marginBottom: 16 }}>
+          <Panel title="Temas predominantes" subtitle="Clic en una barra para filtrar todo el tablero por ese tema (clasificación automática).">
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={porCat} layout="vertical" margin={{ left: 8, right: 20, top: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.line} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: C.muted }} />
+                <YAxis type="category" dataKey="categoria" width={158} tick={{ fontSize: 11, fill: C.ink }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} formatter={(v) => [`${v} PQRSD`, "Volumen"]} />
+                <Bar dataKey="n" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d) => setCatSel(d.categoria === catSel ? null : d.categoria)}>
+                  {porCat.map((e, i) => <Cell key={i} fill={e.categoria === catSel ? C.clay : C.steel} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          <Panel title="Sentimiento ciudadano" subtitle="Distribución de la percepción en la selección.">
+            <ResponsiveContainer width="100%" height={210}>
+              <PieChart>
+                <Pie data={porSent} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={82} paddingAngle={2}>
+                  {porSent.map((e, i) => <Cell key={i} fill={SENT[e.name]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} formatter={(v, n) => [`${v} (${total ? Math.round(v / total * 100) : 0}%)`, n]} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 4 }}>
+              {["Negativo", "Neutral", "Positivo"].map(s => (
+                <span key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.muted }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: SENT[s] }} /> {s}
+                </span>
+              ))}
+            </div>
+          </Panel>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <Panel title="Evolución en el tiempo" subtitle="El sentimiento negativo y el tiempo de respuesta deberían bajar a medida que mejora la atención." right={<span style={{ fontSize: 11.5, color: C.muted }}>Ignora el filtro de período</span>}>
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={evol} margin={{ left: 4, right: 12, top: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.line} />
+                <XAxis dataKey="periodo" tick={{ fontSize: 12, fill: C.ink }} />
+                <YAxis yAxisId="l" tick={{ fontSize: 11, fill: C.muted }} unit="%" />
+                <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11, fill: C.muted }} unit="d" />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line yAxisId="l" type="monotone" dataKey="pctNeg" name="% Negativo" stroke={C.clay} strokeWidth={2.5} dot={{ r: 4 }} />
+                <Line yAxisId="r" type="monotone" dataKey="dias" name="Días de respuesta" stroke={C.gold} strokeWidth={2.5} dot={{ r: 4 }} strokeDasharray="5 4" />
+              </LineChart>
+            </ResponsiveContainer>
+          </Panel>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16, marginBottom: 24 }}>
+          <Panel title="Insatisfacción por zona" subtitle="Porcentaje de PQRSD con sentimiento negativo. Prioriza dónde intervenir.">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={porZona} layout="vertical" margin={{ left: 8, right: 24 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.line} horizontal={false} />
+                <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: C.muted }} domain={[0, "dataMax + 8"]} />
+                <YAxis type="category" dataKey="zona" width={128} tick={{ fontSize: 10.5, fill: C.ink }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} formatter={(v, n, p) => [`${v}% negativo · ${p.payload.n} PQRSD`, "Zona"]} />
+                <Bar dataKey="pctNeg" radius={[0, 4, 4, 0]}>
+                  {porZona.map((e, i) => <Cell key={i} fill={e.pctNeg >= 45 ? C.clay : e.pctNeg >= 32 ? C.gold : C.moss} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          <Panel title="Desempeño del clasificador" subtitle="Métrica técnica (F1) por categoría. Habilita el monitoreo MLOps.">
+            <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 2 }}>
+              {F1_POR_CAT.map((f) => (
+                <div key={f.categoria}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 3 }}>
+                    <span style={{ color: C.ink }}>{f.categoria}</span>
+                    <span style={{ fontWeight: 700, color: f.f1 >= 0.75 ? C.moss : C.clay }}>{f.f1.toFixed(2)}</span>
+                  </div>
+                  <div style={{ height: 7, background: "#EDE8DE", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ width: `${f.f1 * 100}%`, height: "100%", background: f.f1 >= 0.75 ? C.moss : C.clay, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))}
+              <div style={{ marginTop: 6, paddingTop: 10, borderTop: `1px dashed ${C.line}`, display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.muted }}>
+                {F1_MACRO >= 0.75
+                  ? <span style={{display:"inline-flex",alignItems:"center",gap:8}}><Icon name="CheckCircle2" size={15} color={C.moss} /> F1 macro {F1_MACRO.toFixed(3)} — cumple la meta (≥ 0,75)</span>
+                  : <span style={{display:"inline-flex",alignItems:"center",gap:8}}><Icon name="AlertTriangle" size={15} color={C.clay} /> F1 macro {F1_MACRO.toFixed(3)} — por debajo de la meta</span>}
+              </div>
+            </div>
+          </Panel>
+        </div>
+
+        <div style={{ marginBottom: 24 }}>
+          <Panel title="PQRSD individuales clasificadas" subtitle="Cada solicitud con su tema y sentimiento asignados por el modelo. Los textos son de ejemplo, no reales." right={<span style={{ fontSize: 11.5, color: C.muted }}>{total.toLocaleString("es-CO")} en la selección</span>}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ background: "#EAF1EC", color: C.ink }}>
+                    <th style={thTd(true)}>Folio</th>
+                    <th style={thTd(true)}>Zona</th>
+                    <th style={thTd(true)}>Tema</th>
+                    <th style={thTd(true)}>Texto de la solicitud</th>
+                    <th style={{ ...thTd(true), textAlign: "center" }}>Días</th>
+                    <th style={{ ...thTd(true), textAlign: "center" }}>Sentimiento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtrada.slice(0, verFilas).map((r, i) => (
+                    <tr key={r.id} style={{ background: i % 2 ? "#FAFBF9" : "#fff" }}>
+                      <td style={{ ...thTd(false), fontFamily: "ui-monospace, monospace", fontSize: 11.5, color: C.muted, whiteSpace: "nowrap" }}>{r.folio}</td>
+                      <td style={{ ...thTd(false), whiteSpace: "nowrap" }}>{r.zona.replace(/\(.*\)/, "").trim()}</td>
+                      <td style={thTd(false)}>{r.categoria}</td>
+                      <td style={{ ...thTd(false), color: C.ink, maxWidth: 360 }}>{r.texto}</td>
+                      <td style={{ ...thTd(false), textAlign: "center" }}>{r.dias}</td>
+                      <td style={{ ...thTd(false), textAlign: "center" }}>
+                        <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, borderRadius: 20, padding: "3px 10px", color: "#fff", background: SENT[r.sentimiento] }}>{r.sentimiento}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {verFilas < total && (
+              <div style={{ textAlign: "center", marginTop: 12 }}>
+                <button onClick={() => setVerFilas(v => v + 20)} style={{ border: `1px solid ${C.line}`, background: C.card, color: C.petrol, borderRadius: 8, padding: "8px 18px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Ver 20 más</button>
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <div style={{ background: "#EAF1EC", border: `1px solid ${C.line}`, borderRadius: 10, padding: "18px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <Icon name="Activity" size={17} color={C.petrol} />
+            <h3 style={{ margin: 0, fontSize: 15, color: C.petrol, fontWeight: 700 }}>Cómo este tablero aplica el proyecto</h3>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 16 }}>
+            <ConnItem paso="CRISP-DM" txt="Cada PQRSD pasa por comprensión, preparación, modelado (clasificación + sentimiento) y despliegue: este tablero es la fase de despliegue." />
+            <ConnItem paso="Pregunta analítica" txt="Responde qué temas predominan, qué sentimiento generan y cómo evolucionan por zona y período." />
+            <ConnItem paso="Generación de valor" txt="El valor aparece al usar el tablero: priorizar zonas críticas y temas con más insatisfacción reduce tiempos de respuesta." />
+            <ConnItem paso="MLOps" txt="El F1 por categoría permite monitorear la deriva; si cae bajo 0,75, se dispara el reentrenamiento." />
+          </div>
+        </div>
+
+        <p style={{ fontSize: 11, color: C.muted, marginTop: 18, textAlign: "center", lineHeight: 1.6 }}>
+          Todas las cifras y textos de PQRSD son <strong>sintéticos</strong>, generados por un algoritmo con fines de demostración académica del módulo Gerencia de Proyectos y Analítica (UNAULA).<br />
+          No corresponden a personas ni a registros reales de la Oficina de Enlace de Víctimas. El tratamiento de datos reales exige cumplimiento de la Ley 1581 de 2012.<br />
+          Zonas basadas en la división territorial de Quibdó · categorías basadas en la ruta de atención de la Ley 1448 de 2011 · paleta basada en la bandera del municipio.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard />);
+  </script>
+</body>
+</html>
