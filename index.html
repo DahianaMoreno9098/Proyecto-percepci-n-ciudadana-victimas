@@ -6,37 +6,41 @@
   <title>Percepción ciudadana · Oficina de Enlace de Víctimas de Quibdó</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <!-- React, ReactDOM, Recharts, Babel desde CDN -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
-  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: 'Inter', system-ui, sans-serif; }
-    #loading { padding: 60px; text-align: center; color: #5E6B60; font-family: 'Inter', sans-serif; }
+    body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: #F3F5F0; }
+    #status { padding: 60px 30px; text-align: center; color: #5E6B60; font-family: 'Inter', system-ui, sans-serif; }
+    #status .err { color: #C0392B; font-size: 13px; margin-top: 12px; max-width: 520px; margin-left:auto; margin-right:auto; line-height:1.5; }
     select:focus, button:focus { outline: 2px solid #0F6B3F; outline-offset: 1px; }
   </style>
 </head>
 <body>
-  <div id="root"><div id="loading">Cargando el tablero…</div></div>
+  <div id="root"><div id="status">Cargando el tablero…</div></div>
+
+  <script>
+    window.__mounted = false;
+    setTimeout(function () {
+      if (!window.__mounted) {
+        var s = document.getElementById("status");
+        if (s) s.innerHTML = "No se pudo cargar el tablero." +
+          "<div class='err'>Las librerías externas (React) no cargaron. Revisa tu conexión e intenta recargar. " +
+          "Si estás en una red institucional que bloquea recursos externos, prueba desde otra red o datos móviles.</div>";
+      }
+    }, 8000);
+    window.addEventListener("error", function (e) {
+      if (!window.__mounted) {
+        var s = document.getElementById("status");
+        if (s) s.innerHTML = "Error al cargar el tablero.<div class='err'>" + (e.message || e.type) + "</div>";
+      }
+    });
+  </script>
 
   <script type="text/babel" data-presets="react">
 const { useState, useMemo } = React;
-const {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} = Recharts;
 
-/* ============================================================
-   Sistema de análisis de percepción ciudadana
-   Oficina de Enlace de Víctimas — Alcaldía de Quibdó
-   Datos SINTÉTICOS con fines de demostración académica.
-   Paleta basada en la bandera del municipio de Quibdó.
-   ============================================================ */
-
-// --- Iconos SVG mínimos (reemplazan lucide-react) ---
 const PATHS = {
   Filter: "M22 3H2l8 9.46V19l4 2v-8.54L22 3z",
   TrendingDown: "M23 18l-9.5-9.5-5 5L1 6 M17 18h6v-6",
@@ -52,17 +56,13 @@ const PATHS = {
 };
 function Icon({ name, size = 16, color = "currentColor", style }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      style={style} aria-hidden="true">
-      {PATHS[name].split(" M").map((seg, i) => (
-        <path key={i} d={(i === 0 ? seg : "M" + seg)} />
-      ))}
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} aria-hidden="true">
+      {PATHS[name].split(" M").map((seg, i) => <path key={i} d={i === 0 ? seg : "M" + seg} />)}
     </svg>
   );
 }
 
-// --- Paleta derivada de la bandera de Quibdó (verde / amarillo / azul) ---
 const C = {
   ink: "#14332a", petrol: "#0F6B3F", steel: "#1E5AA8", clay: "#C0392B",
   gold: "#E9B417", moss: "#2E8B57", paper: "#F3F5F0", card: "#FFFFFF",
@@ -88,51 +88,18 @@ const catPeso = [0.22, 0.18, 0.14, 0.12, 0.08, 0.13, 0.07, 0.06];
 const catNeg = [0.42, 0.66, 0.58, 0.40, 0.30, 0.52, 0.48, 0.36];
 
 const TEXTOS = {
-  "Ayuda humanitaria": {
-    Negativo: ["Llevo tres meses esperando la ayuda humanitaria y no me han dado respuesta.", "Solicité el mercado de emergencia y nunca llegó, mi familia está pasando necesidad."],
-    Neutral: ["Pregunto por el estado de mi solicitud de ayuda humanitaria inmediata.", "Quisiera saber qué documentos faltan para la ayuda humanitaria."],
-    Positivo: ["Agradezco que me entregaron la ayuda humanitaria rápidamente.", "La atención para la ayuda de emergencia fue oportuna, gracias."],
-  },
-  "Indemnización / reparación": {
-    Negativo: ["Fui incluido hace años y todavía no me llega la indemnización, es una injusticia.", "No entiendo por qué a otros ya les pagaron la reparación y a mí no."],
-    Neutral: ["Solicito información sobre el turno de mi indemnización administrativa.", "¿Cómo consulto el estado de mi proceso de reparación?"],
-    Positivo: ["Por fin recibí la indemnización, agradezco la gestión de la oficina.", "Me orientaron bien sobre el proceso de reparación."],
-  },
-  "Vivienda": {
-    Negativo: ["Postulé al subsidio de vivienda y me rechazaron sin explicación clara.", "La casa que me asignaron tiene problemas y nadie responde."],
-    Neutral: ["Pregunto por las convocatorias de vivienda para población víctima.", "Solicito información sobre el subsidio de mejoramiento de vivienda."],
-    Positivo: ["Me asignaron la vivienda, muy agradecido con el acompañamiento.", "El proceso de postulación a vivienda fue claro."],
-  },
-  "Salud y atención psicosocial": {
-    Negativo: ["Necesito atención psicosocial y me dan citas para dentro de meses.", "No hay profesionales suficientes para la atención en salud mental."],
-    Neutral: ["Solicito una cita de atención psicosocial para mi familia.", "Pregunto por el programa de atención en salud para víctimas."],
-    Positivo: ["La atención psicosocial me ha ayudado mucho, gracias al equipo.", "Recibí buena orientación en salud, quedé satisfecho."],
-  },
-  "Educación": {
-    Negativo: ["Mi hijo no ha podido acceder al beneficio educativo prometido.", "Falta información sobre los cupos educativos para víctimas."],
-    Neutral: ["Solicito información sobre becas para estudiantes víctimas.", "Pregunto por el apoyo educativo para el próximo semestre."],
-    Positivo: ["Mi hija obtuvo el apoyo educativo, muy agradecida.", "La orientación sobre educación superior fue útil."],
-  },
-  "Registro / inclusión RUV": {
-    Negativo: ["Llevo meses esperando que me incluyan en el RUV y no hay respuesta.", "Me negaron la inclusión y no me explicaron los motivos."],
-    Neutral: ["Solicito información sobre mi estado en el Registro Único de Víctimas.", "¿Qué debo hacer para actualizar mis datos en el RUV?"],
-    Positivo: ["Ya quedé incluido en el registro, agradezco la ayuda.", "Me orientaron bien para la declaración, todo salió bien."],
-  },
-  "Retornos y reubicación": {
-    Negativo: ["Solicité apoyo para el retorno y no hay condiciones de seguridad.", "El proceso de reubicación está detenido hace tiempo."],
-    Neutral: ["Pregunto por el plan de retorno para mi comunidad.", "Solicito información sobre acompañamiento para reubicación."],
-    Positivo: ["El acompañamiento para el retorno fue bueno, gracias.", "Nos apoyaron en la reubicación de manera adecuada."],
-  },
-  "Otros trámites": {
-    Negativo: ["Me han remitido de una oficina a otra sin resolver mi caso.", "La fila de atención es muy larga y no alcanzan a atender."],
-    Neutral: ["Solicito un certificado de mi condición de víctima.", "Pregunto por el horario de atención de la oficina."],
-    Positivo: ["La atención en ventanilla fue amable y rápida.", "Me resolvieron el trámite sin complicaciones."],
-  },
+  "Ayuda humanitaria": { Negativo: ["Llevo tres meses esperando la ayuda humanitaria y no me han dado respuesta.", "Solicité el mercado de emergencia y nunca llegó, mi familia está pasando necesidad."], Neutral: ["Pregunto por el estado de mi solicitud de ayuda humanitaria inmediata.", "Quisiera saber qué documentos faltan para la ayuda humanitaria."], Positivo: ["Agradezco que me entregaron la ayuda humanitaria rápidamente.", "La atención para la ayuda de emergencia fue oportuna, gracias."] },
+  "Indemnización / reparación": { Negativo: ["Fui incluido hace años y todavía no me llega la indemnización, es una injusticia.", "No entiendo por qué a otros ya les pagaron la reparación y a mí no."], Neutral: ["Solicito información sobre el turno de mi indemnización administrativa.", "¿Cómo consulto el estado de mi proceso de reparación?"], Positivo: ["Por fin recibí la indemnización, agradezco la gestión de la oficina.", "Me orientaron bien sobre el proceso de reparación."] },
+  "Vivienda": { Negativo: ["Postulé al subsidio de vivienda y me rechazaron sin explicación clara.", "La casa que me asignaron tiene problemas y nadie responde."], Neutral: ["Pregunto por las convocatorias de vivienda para población víctima.", "Solicito información sobre el subsidio de mejoramiento de vivienda."], Positivo: ["Me asignaron la vivienda, muy agradecido con el acompañamiento.", "El proceso de postulación a vivienda fue claro."] },
+  "Salud y atención psicosocial": { Negativo: ["Necesito atención psicosocial y me dan citas para dentro de meses.", "No hay profesionales suficientes para la atención en salud mental."], Neutral: ["Solicito una cita de atención psicosocial para mi familia.", "Pregunto por el programa de atención en salud para víctimas."], Positivo: ["La atención psicosocial me ha ayudado mucho, gracias al equipo.", "Recibí buena orientación en salud, quedé satisfecho."] },
+  "Educación": { Negativo: ["Mi hijo no ha podido acceder al beneficio educativo prometido.", "Falta información sobre los cupos educativos para víctimas."], Neutral: ["Solicito información sobre becas para estudiantes víctimas.", "Pregunto por el apoyo educativo para el próximo semestre."], Positivo: ["Mi hija obtuvo el apoyo educativo, muy agradecida.", "La orientación sobre educación superior fue útil."] },
+  "Registro / inclusión RUV": { Negativo: ["Llevo meses esperando que me incluyan en el RUV y no hay respuesta.", "Me negaron la inclusión y no me explicaron los motivos."], Neutral: ["Solicito información sobre mi estado en el Registro Único de Víctimas.", "¿Qué debo hacer para actualizar mis datos en el RUV?"], Positivo: ["Ya quedé incluido en el registro, agradezco la ayuda.", "Me orientaron bien para la declaración, todo salió bien."] },
+  "Retornos y reubicación": { Negativo: ["Solicité apoyo para el retorno y no hay condiciones de seguridad.", "El proceso de reubicación está detenido hace tiempo."], Neutral: ["Pregunto por el plan de retorno para mi comunidad.", "Solicito información sobre acompañamiento para reubicación."], Positivo: ["El acompañamiento para el retorno fue bueno, gracias.", "Nos apoyaron en la reubicación de manera adecuada."] },
+  "Otros trámites": { Negativo: ["Me han remitido de una oficina a otra sin resolver mi caso.", "La fila de atención es muy larga y no alcanzan a atender."], Neutral: ["Solicito un certificado de mi condición de víctima.", "Pregunto por el horario de atención de la oficina."], Positivo: ["La atención en ventanilla fue amable y rápida.", "Me resolvieron el trámite sin complicaciones."] },
 };
 
 function generar() {
-  const filas = [];
-  let id = 1;
+  const filas = []; let id = 1;
   PERIODOS.forEach((per, pi) => {
     const base = 340 + pi * 45;
     ZONAS.forEach((z, zi) => {
@@ -150,7 +117,7 @@ function generar() {
           const dias = Math.max(2, Math.round(18 - pi * 2.2 + rural + (rnd() - 0.4) * 8));
           const opciones = TEXTOS[cat][sent];
           const texto = opciones[Math.floor(rnd() * opciones.length)];
-          const folio = `PQR-${per.replace("-", "")}-${String(id).padStart(4, "0")}`;
+          const folio = "PQR-" + per.replace("-", "") + "-" + String(id).padStart(4, "0");
           filas.push({ id: id++, folio, periodo: per, zona: z, categoria: cat, sentimiento: sent, dias, texto });
         }
       });
@@ -160,10 +127,86 @@ function generar() {
 }
 const DATA = generar();
 
-const F1_POR_CAT = CATEGORIAS.map((c, i) => ({
-  categoria: c, f1: +(0.71 + (1 - catNeg[i]) * 0.18 + rnd() * 0.05).toFixed(2),
-}));
+const F1_POR_CAT = CATEGORIAS.map((c, i) => ({ categoria: c, f1: +(0.71 + (1 - catNeg[i]) * 0.18 + rnd() * 0.05).toFixed(2) }));
 const F1_MACRO = +(F1_POR_CAT.reduce((a, b) => a + b.f1, 0) / F1_POR_CAT.length).toFixed(3);
+
+function HBar({ data, height = 280, unit = "", onClick, maxLabel = 160 }) {
+  const max = Math.max(1, ...data.map(d => d.value));
+  const rowH = Math.min(34, (height - 10) / data.length);
+  const chartW = 620, barX = maxLabel + 8, barW = chartW - barX - 44;
+  return (
+    <svg width="100%" viewBox={`0 0 ${chartW} ${data.length * rowH + 8}`} style={{ maxHeight: height }}>
+      {data.map((d, i) => {
+        const y = i * rowH + 4;
+        const w = (d.value / max) * barW;
+        return (
+          <g key={i} style={{ cursor: onClick ? "pointer" : "default" }} onClick={() => onClick && onClick(d)}>
+            <text x={maxLabel} y={y + rowH / 2} textAnchor="end" dominantBaseline="middle" fontSize="11" fill={C.ink}>
+              {d.label.length > 26 ? d.label.slice(0, 25) + "…" : d.label}
+            </text>
+            <rect x={barX} y={y + 3} width={Math.max(2, w)} height={rowH - 8} rx="3" fill={d.color} />
+            <text x={barX + Math.max(2, w) + 5} y={y + rowH / 2} dominantBaseline="middle" fontSize="10.5" fill={C.muted}>{d.value}{unit}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function Donut({ data, size = 190 }) {
+  const total = data.reduce((a, b) => a + b.value, 0) || 1;
+  const cx = size / 2, cy = size / 2, r = size / 2 - 10, rin = r * 0.62;
+  let ang = -Math.PI / 2;
+  const arcs = data.map(d => {
+    const frac = d.value / total;
+    const a0 = ang, a1 = ang + frac * 2 * Math.PI; ang = a1;
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    const xi1 = cx + rin * Math.cos(a1), yi1 = cy + rin * Math.sin(a1);
+    const xi0 = cx + rin * Math.cos(a0), yi0 = cy + rin * Math.sin(a0);
+    return { dpath: `M${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1} L${xi1} ${yi1} A${rin} ${rin} 0 ${large} 0 ${xi0} ${yi0} Z`, color: SENT[d.name] };
+  });
+  return (
+    <svg width="100%" viewBox={`0 0 ${size} ${size}`} style={{ maxHeight: 210 }}>
+      {arcs.map((a, i) => <path key={i} d={a.dpath} fill={a.color} />)}
+      <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" fontWeight="700" fill={C.ink}>{total}</text>
+      <text x={cx} y={cy + 14} textAnchor="middle" fontSize="10" fill={C.muted}>PQRSD</text>
+    </svg>
+  );
+}
+
+function DualLine({ data, height = 250 }) {
+  const w = 620, h = height, pad = 40;
+  const maxA = Math.max(1, ...data.map(d => d.a));
+  const maxB = Math.max(1, ...data.map(d => d.b));
+  const xs = i => pad + i * ((w - pad * 2) / (data.length - 1));
+  const yA = v => h - pad - (v / maxA) * (h - pad * 2);
+  const yB = v => h - pad - (v / maxB) * (h - pad * 2);
+  const lineA = data.map((d, i) => `${i ? "L" : "M"}${xs(i)} ${yA(d.a)}`).join(" ");
+  const lineB = data.map((d, i) => `${i ? "L" : "M"}${xs(i)} ${yB(d.b)}`).join(" ");
+  return (
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ maxHeight: height }}>
+      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+        <line key={i} x1={pad} x2={w - pad} y1={pad + t * (h - pad * 2)} y2={pad + t * (h - pad * 2)} stroke={C.line} strokeDasharray="3 3" />
+      ))}
+      <path d={lineA} fill="none" stroke={C.clay} strokeWidth="2.5" />
+      <path d={lineB} fill="none" stroke={C.gold} strokeWidth="2.5" strokeDasharray="5 4" />
+      {data.map((d, i) => (
+        <g key={i}>
+          <circle cx={xs(i)} cy={yA(d.a)} r="4" fill={C.clay} />
+          <circle cx={xs(i)} cy={yB(d.b)} r="4" fill={C.gold} />
+          <text x={xs(i)} y={h - pad + 16} textAnchor="middle" fontSize="11" fill={C.ink}>{d.x}</text>
+          <text x={xs(i)} y={yA(d.a) - 8} textAnchor="middle" fontSize="10" fill={C.clay} fontWeight="700">{d.a}%</text>
+        </g>
+      ))}
+      <g fontSize="11">
+        <rect x={pad} y={6} width="10" height="10" fill={C.clay} rx="2" /><text x={pad + 15} y={15} fill={C.muted}>% Negativo</text>
+        <rect x={pad + 95} y={6} width="10" height="10" fill={C.gold} rx="2" /><text x={pad + 110} y={15} fill={C.muted}>Días de respuesta</text>
+      </g>
+    </svg>
+  );
+}
 
 function StatCard({ icon, label, value, sub, accent }) {
   return (
@@ -188,9 +231,7 @@ function Panel({ title, subtitle, children, right }) {
     </div>
   );
 }
-function thTd(isHeader) {
-  return { textAlign: "left", padding: isHeader ? "9px 10px" : "8px 10px", borderBottom: "1px solid #E3E9E1", fontWeight: isHeader ? 700 : 400, verticalAlign: "top" };
-}
+function thTd(h) { return { textAlign: "left", padding: h ? "9px 10px" : "8px 10px", borderBottom: "1px solid #E3E9E1", fontWeight: h ? 700 : 400, verticalAlign: "top" }; }
 function ConnItem({ paso, txt }) {
   return (
     <div>
@@ -209,15 +250,14 @@ function Dashboard() {
   const filtrada = useMemo(() => DATA.filter(d =>
     (zona === "Todas" || d.zona === zona) &&
     (periodo === "Todos" || d.periodo === periodo) &&
-    (!catSel || d.categoria === catSel)
-  ), [zona, periodo, catSel]);
+    (!catSel || d.categoria === catSel)), [zona, periodo, catSel]);
   const total = filtrada.length;
 
   const porCat = useMemo(() => {
     const m = Object.fromEntries(CATEGORIAS.map(c => [c, 0]));
     filtrada.forEach(d => (m[d.categoria] += 1));
-    return CATEGORIAS.map(c => ({ categoria: c, n: m[c] })).sort((a, b) => b.n - a.n);
-  }, [filtrada]);
+    return CATEGORIAS.map(c => ({ label: c, categoria: c, value: m[c], color: c === catSel ? C.clay : C.steel })).sort((a, b) => b.value - a.value);
+  }, [filtrada, catSel]);
 
   const porSent = useMemo(() => {
     const m = { Positivo: 0, Neutral: 0, Negativo: 0 };
@@ -232,28 +272,27 @@ function Dashboard() {
     const sub = DATA.filter(d => d.periodo === per && (zona === "Todas" || d.zona === zona) && (!catSel || d.categoria === catSel));
     const neg = sub.filter(d => d.sentimiento === "Negativo").length;
     const dias = sub.length ? sub.reduce((a, b) => a + b.dias, 0) / sub.length : 0;
-    return { periodo: per, pctNeg: sub.length ? Math.round((neg / sub.length) * 100) : 0, dias: +dias.toFixed(1) };
+    return { x: per, a: sub.length ? Math.round((neg / sub.length) * 100) : 0, b: +dias.toFixed(1) };
   }), [zona, catSel]);
 
   const porZona = useMemo(() => ZONAS.map(z => {
     const sub = DATA.filter(d => d.zona === z && (periodo === "Todos" || d.periodo === periodo) && (!catSel || d.categoria === catSel));
     const neg = sub.filter(d => d.sentimiento === "Negativo").length;
-    return { zona: z.replace("Corregimiento ", "C. ").replace(/\(.*\)/, "").trim(), pctNeg: sub.length ? Math.round((neg / sub.length) * 100) : 0, n: sub.length };
-  }).sort((a, b) => b.pctNeg - a.pctNeg), [periodo, catSel]);
+    const pct = sub.length ? Math.round((neg / sub.length) * 100) : 0;
+    return { label: z.replace("Corregimiento ", "C. ").replace(/\(.*\)/, "").trim(), value: pct, color: pct >= 45 ? C.clay : pct >= 32 ? C.gold : C.moss };
+  }).sort((a, b) => b.value - a.value), [periodo, catSel]);
 
   const resetFiltros = () => { setZona("Todas"); setPeriodo("Todos"); setCatSel(null); setVerFilas(12); };
 
   const exportarCSV = () => {
     const cols = ["folio", "periodo", "zona", "categoria", "sentimiento", "dias", "texto"];
     const enc = ["Folio", "Periodo", "Zona", "Categoria", "Sentimiento", "Dias_respuesta", "Texto_PQRSD"];
-    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const esc = v => `"${String(v).replace(/"/g, '""')}"`;
     const lineas = [enc.join(",")].concat(filtrada.map(r => cols.map(c => esc(r[c])).join(",")));
     const blob = new Blob(["\uFEFF" + lineas.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `pqrsd_percepcion_${zona === "Todas" ? "todas" : "zona"}_${periodo === "Todos" ? "todos" : periodo}.csv`;
-    a.click();
+    a.href = url; a.download = "pqrsd_percepcion.csv"; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -279,7 +318,7 @@ function Dashboard() {
       </header>
 
       <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 28px" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 16px", margin: "-14px 0 20px", position: "relative", boxShadow: "0 4px 14px rgba(15,107,63,0.10)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 16px", margin: "-14px 0 20px", boxShadow: "0 4px 14px rgba(15,107,63,0.10)" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 700, color: C.muted }}>
             <Icon name="Filter" size={15} color={C.muted} /> Filtros
           </span>
@@ -315,29 +354,11 @@ function Dashboard() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, marginBottom: 16 }}>
-          <Panel title="Temas predominantes" subtitle="Clic en una barra para filtrar todo el tablero por ese tema (clasificación automática).">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={porCat} layout="vertical" margin={{ left: 8, right: 20, top: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.line} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: C.muted }} />
-                <YAxis type="category" dataKey="categoria" width={158} tick={{ fontSize: 11, fill: C.ink }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} formatter={(v) => [`${v} PQRSD`, "Volumen"]} />
-                <Bar dataKey="n" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d) => setCatSel(d.categoria === catSel ? null : d.categoria)}>
-                  {porCat.map((e, i) => <Cell key={i} fill={e.categoria === catSel ? C.clay : C.steel} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <Panel title="Temas predominantes" subtitle="Clic en una barra para filtrar todo el tablero por ese tema.">
+            <HBar data={porCat} height={280} unit="" maxLabel={160} onClick={(d) => setCatSel(d.categoria === catSel ? null : d.categoria)} />
           </Panel>
-
           <Panel title="Sentimiento ciudadano" subtitle="Distribución de la percepción en la selección.">
-            <ResponsiveContainer width="100%" height={210}>
-              <PieChart>
-                <Pie data={porSent} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={82} paddingAngle={2}>
-                  {porSent.map((e, i) => <Cell key={i} fill={SENT[e.name]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} formatter={(v, n) => [`${v} (${total ? Math.round(v / total * 100) : 0}%)`, n]} />
-              </PieChart>
-            </ResponsiveContainer>
+            <Donut data={porSent} />
             <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 4 }}>
               {["Negativo", "Neutral", "Positivo"].map(s => (
                 <span key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.muted }}>
@@ -349,37 +370,15 @@ function Dashboard() {
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <Panel title="Evolución en el tiempo" subtitle="El sentimiento negativo y el tiempo de respuesta deberían bajar a medida que mejora la atención." right={<span style={{ fontSize: 11.5, color: C.muted }}>Ignora el filtro de período</span>}>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={evol} margin={{ left: 4, right: 12, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.line} />
-                <XAxis dataKey="periodo" tick={{ fontSize: 12, fill: C.ink }} />
-                <YAxis yAxisId="l" tick={{ fontSize: 11, fill: C.muted }} unit="%" />
-                <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11, fill: C.muted }} unit="d" />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line yAxisId="l" type="monotone" dataKey="pctNeg" name="% Negativo" stroke={C.clay} strokeWidth={2.5} dot={{ r: 4 }} />
-                <Line yAxisId="r" type="monotone" dataKey="dias" name="Días de respuesta" stroke={C.gold} strokeWidth={2.5} dot={{ r: 4 }} strokeDasharray="5 4" />
-              </LineChart>
-            </ResponsiveContainer>
+          <Panel title="Evolución en el tiempo" subtitle="% negativo (línea roja) y días de respuesta (línea amarilla) por período." right={<span style={{ fontSize: 11.5, color: C.muted }}>Ignora el filtro de período</span>}>
+            <DualLine data={evol} height={250} />
           </Panel>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16, marginBottom: 24 }}>
           <Panel title="Insatisfacción por zona" subtitle="Porcentaje de PQRSD con sentimiento negativo. Prioriza dónde intervenir.">
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={porZona} layout="vertical" margin={{ left: 8, right: 24 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.line} horizontal={false} />
-                <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: C.muted }} domain={[0, "dataMax + 8"]} />
-                <YAxis type="category" dataKey="zona" width={128} tick={{ fontSize: 10.5, fill: C.ink }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} formatter={(v, n, p) => [`${v}% negativo · ${p.payload.n} PQRSD`, "Zona"]} />
-                <Bar dataKey="pctNeg" radius={[0, 4, 4, 0]}>
-                  {porZona.map((e, i) => <Cell key={i} fill={e.pctNeg >= 45 ? C.clay : e.pctNeg >= 32 ? C.gold : C.moss} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <HBar data={porZona} height={300} unit="%" maxLabel={120} />
           </Panel>
-
           <Panel title="Desempeño del clasificador" subtitle="Métrica técnica (F1) por categoría. Habilita el monitoreo MLOps.">
             <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 2 }}>
               {F1_POR_CAT.map((f) => (
@@ -394,9 +393,8 @@ function Dashboard() {
                 </div>
               ))}
               <div style={{ marginTop: 6, paddingTop: 10, borderTop: `1px dashed ${C.line}`, display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.muted }}>
-                {F1_MACRO >= 0.75
-                  ? <span style={{display:"inline-flex",alignItems:"center",gap:8}}><Icon name="CheckCircle2" size={15} color={C.moss} /> F1 macro {F1_MACRO.toFixed(3)} — cumple la meta (≥ 0,75)</span>
-                  : <span style={{display:"inline-flex",alignItems:"center",gap:8}}><Icon name="AlertTriangle" size={15} color={C.clay} /> F1 macro {F1_MACRO.toFixed(3)} — por debajo de la meta</span>}
+                <Icon name={F1_MACRO >= 0.75 ? "CheckCircle2" : "AlertTriangle"} size={15} color={F1_MACRO >= 0.75 ? C.moss : C.clay} />
+                F1 macro {F1_MACRO.toFixed(3)} — {F1_MACRO >= 0.75 ? "cumple la meta (≥ 0,75)" : "por debajo de la meta"}
               </div>
             </div>
           </Panel>
@@ -408,9 +406,7 @@ function Dashboard() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: "#EAF1EC", color: C.ink }}>
-                    <th style={thTd(true)}>Folio</th>
-                    <th style={thTd(true)}>Zona</th>
-                    <th style={thTd(true)}>Tema</th>
+                    <th style={thTd(true)}>Folio</th><th style={thTd(true)}>Zona</th><th style={thTd(true)}>Tema</th>
                     <th style={thTd(true)}>Texto de la solicitud</th>
                     <th style={{ ...thTd(true), textAlign: "center" }}>Días</th>
                     <th style={{ ...thTd(true), textAlign: "center" }}>Sentimiento</th>
@@ -419,7 +415,7 @@ function Dashboard() {
                 <tbody>
                   {filtrada.slice(0, verFilas).map((r, i) => (
                     <tr key={r.id} style={{ background: i % 2 ? "#FAFBF9" : "#fff" }}>
-                      <td style={{ ...thTd(false), fontFamily: "ui-monospace, monospace", fontSize: 11.5, color: C.muted, whiteSpace: "nowrap" }}>{r.folio}</td>
+                      <td style={{ ...thTd(false), fontFamily: "monospace", fontSize: 11.5, color: C.muted, whiteSpace: "nowrap" }}>{r.folio}</td>
                       <td style={{ ...thTd(false), whiteSpace: "nowrap" }}>{r.zona.replace(/\(.*\)/, "").trim()}</td>
                       <td style={thTd(false)}>{r.categoria}</td>
                       <td style={{ ...thTd(false), color: C.ink, maxWidth: 360 }}>{r.texto}</td>
@@ -463,6 +459,7 @@ function Dashboard() {
   );
 }
 
+window.__mounted = true;
 ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard />);
   </script>
 </body>
